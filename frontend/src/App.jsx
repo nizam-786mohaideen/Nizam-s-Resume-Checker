@@ -6,11 +6,15 @@ const defaultPrompt = "Drop your resume here";
 function App() {
   const fileInputRef = useRef(null);
   const [file, setFile] = useState(null);
+  const [jobDescription, setJobDescription] = useState("");
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submission, setSubmission] = useState(null);
 
   function selectFile(selectedFile) {
     setError("");
+    setSubmission(null);
 
     if (!selectedFile) {
       setFile(null);
@@ -47,11 +51,29 @@ function App() {
     selectFile(event.dataTransfer.files[0]);
   }
 
-  function handleAnalyze() {
-    if (!file) return;
-    setError(
-      "This is a visual demo. Resume scoring and skill matching aren't connected yet.",
-    );
+  async function handleAnalyze() {
+    if (!file || !jobDescription.trim() || isSubmitting) return;
+    setError("");
+    setSubmission(null);
+    setIsSubmitting(true);
+
+    const formData = new FormData();
+    formData.append("resume", file);
+    formData.append("jobDescription", jobDescription);
+
+    try {
+      const response = await fetch("/api/comparisons", {
+        method: "POST",
+        body: formData,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save your request.");
+      setSubmission(result);
+    } catch (requestError) {
+      setError(requestError.message || "Could not reach the server. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -88,16 +110,16 @@ function App() {
               looks good on <span>you.</span>
             </h1>
             <p className="hero-description">
-              See how your resume stacks up. Get a quick score, celebrate the
-              skills you have, and spot the ones to work on next.
+              Compare your resume with a job description and get an AI-powered
+              match score with practical feedback.
             </p>
 
             <div className="upload-card">
               <div className="upload-card-heading">
                 <span className="upload-step">01</span>
                 <div>
-                  <h2>Start with your resume</h2>
-                  <p>One PDF is all you need.</p>
+                  <h2>Add your resume and job description</h2>
+                  <p>Your resume text is sent to Labd to generate your score.</p>
                 </div>
               </div>
 
@@ -144,8 +166,26 @@ function App() {
                 <span className="drop-zone-subtitle">
                   or <span>browse files</span> on your device
                 </span>
-                <span className="file-hint">PDF only · Up to 10 MB</span>
+                <span className="file-hint">PDF only | Up to 10 MB</span>
               </label>
+              <label className="job-description-label" htmlFor="job-description">
+                Job description
+              </label>
+              <textarea
+                id="job-description"
+                className="job-description-input"
+                value={jobDescription}
+                onChange={(event) => {
+                  setJobDescription(event.target.value);
+                  setError("");
+                  setSubmission(null);
+                }}
+                maxLength={30000}
+                rows={5}
+                placeholder="Paste the job description here..."
+                aria-describedby="upload-error"
+              />
+              <p className="character-count">{jobDescription.length.toLocaleString()} / 30,000 characters</p>
               <p
                 className="upload-error"
                 id="upload-error"
@@ -154,6 +194,46 @@ function App() {
               >
                 {error}
               </p>
+              {submission && (
+                <section className="analysis-result" aria-live="polite" aria-label="Resume comparison result">
+                  <div className="analysis-result-heading">
+                    <span className="analysis-score">{submission.analysis.score}<small>/100</small></span>
+                    <div>
+                      <strong>Resume match score</strong>
+                      <p>{submission.analysis.summary}</p>
+                    </div>
+                  </div>
+                  <div className="analysis-lists">
+                    {submission.analysis.matchedSkills.length > 0 && (
+                      <div>
+                        <h3>Skills that match</h3>
+                        <ul>{submission.analysis.matchedSkills.map((skill, index) => <li key={`${skill}-${index}`}>{skill}</li>)}</ul>
+                      </div>
+                    )}
+                    {submission.analysis.missingSkills.length > 0 && (
+                      <div>
+                        <h3>Skills to build</h3>
+                        <ul>{submission.analysis.missingSkills.map((skill, index) => <li key={`${skill}-${index}`}>{skill}</li>)}</ul>
+                      </div>
+                    )}
+                  </div>
+                  {submission.analysis.improvements.length > 0 && (
+                    <div className="analysis-improvements">
+                      <h3>Suggested next steps</h3>
+                      <ul>{submission.analysis.improvements.map((item) => <li key={item}>{item}</li>)}</ul>
+                    </div>
+                  )}
+                  {submission.analysis.strengths.length > 0 && (
+                    <div className="analysis-improvements">
+                      <h3>Resume strengths</h3>
+                      <ul>{submission.analysis.strengths.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>
+                    </div>
+                  )}
+                  {Number.isFinite(submission.creditsPercentLeft) && (
+                    <p className="credits-note">Labd allowance: {submission.creditsPercentLeft}% remaining</p>
+                  )}
+                </section>
+              )}
 
               <div className="upload-footer">
                 <span className="privacy-note">
@@ -167,15 +247,15 @@ function App() {
                     />
                     <path d="M6.75 8V5.75a3.25 3.25 0 0 1 6.5 0V8M10 11.5v2" />
                   </svg>
-                  Your file stays on your device
+                  Resume text is sent to Labd for scoring
                 </span>
                 <button
                   className="analyze-button"
                   type="button"
-                  disabled={!file}
+                  disabled={!file || !jobDescription.trim() || isSubmitting}
                   onClick={handleAnalyze}
                 >
-                  Check my resume
+                  {isSubmitting ? "Comparing..." : "Compare my resume"}
                   <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path d="M4 10h12m0 0-5-5m5 5-5 5" />
                   </svg>
@@ -196,7 +276,7 @@ function App() {
             <div className="preview-topline">
               <span className="preview-label">
                 <span />
-                YOUR SNAPSHOT
+                EXAMPLE SCORE
               </span>
               <span className="demo-badge">EXAMPLE</span>
             </div>
@@ -215,7 +295,7 @@ function App() {
                 <span className="score-kicker">RESUME SCORE</span>
                 <h2>A strong start.</h2>
                 <p>
-                  There’s a lot to like here, with a few more skills to explore.
+                  A sample result shows the score and skill feedback you will receive.
                 </p>
               </div>
             </div>
@@ -258,7 +338,7 @@ function App() {
               </div>
             </div>
             <p className="preview-disclaimer">
-              A friendly example of what your results could look like.
+              Example preview only. Your score appears here after you submit both documents.
             </p>
             <div className="preview-decoration" aria-hidden="true" />
           </aside>
@@ -267,7 +347,7 @@ function App() {
 
       <footer className="site-footer">
         <span>Made for the next chapter.</span>
-        <span>Mock demo · No files are uploaded or analyzed</span>
+        <span>Resume comparison powered by Labd</span>
       </footer>
     </>
   );
